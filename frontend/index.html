@@ -114,8 +114,8 @@
 </div>
 
 <script>
-    const API_URL = "http://127.0.0.1:8000";
-    const WS_URL = "ws://127.0.0.1:8000/ws";
+    const API_URL = window.location.origin;
+    const WS_URL = (window.location.protocol === "https:" ? "wss://" : "ws://") + window.location.host + "/ws";
 
     let ws = null;
     let myUsername = "";
@@ -679,7 +679,7 @@
         // This triggers the onload function above
         reader.readAsDataURL(file); 
     }
-    
+
     // Allow pressing "Enter" to send
     document.getElementById("messageText").addEventListener("keypress", function(event) {
         if (event.key === "Enter") {
