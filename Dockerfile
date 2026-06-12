@@ -4,11 +4,13 @@ FROM python:3.11-slim
 # Set working directory inside the container
 WORKDIR /app
 
-# Copy your requirements file and install dependencies
-COPY requirements.txt .
+# Copy the requirements file from the backend directory
+COPY backend/requirements.txt .
+
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy your entire backend folder into the container
+# Copy the entire backend directory into the container
 COPY backend/ /app/backend/
 
 # Set the working directory to the backend folder
