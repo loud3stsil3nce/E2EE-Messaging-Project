@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>E2EE Messenger</title>
+    <style>
+        /* Modern App Reset */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background: #e0e0e0; display: flex; justify-content: center; align-items: center; height: 100vh; }
+        
+        /* The Main App Window */
+        #appContainer { width: 95%; max-width: 1200px; height: 90vh; background: white; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); display: flex; overflow: hidden; }
+        
+        /* Login Screen */
+        #loginPanel { width: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #f8f9fa; }
+        .auth-box { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; width: 350px; }
+        .auth-box input { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 6px; }
+        .auth-box button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 6px; color: white; cursor: pointer; font-weight: bold; }
+        .btn-login { background: #28a745; }
+        .btn-register { background: #007bff; }
+
+        /* Main Workspace (Hidden until login) */
+        #workspace { display: none; width: 100%; height: 100%; }
+
+        /* Left Sidebar */
+        #sidebar { width: 300px; background: #f8f9fa; border-right: 1px solid #ddd; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; background: #fff; border-bottom: 1px solid #ddd; }
+        .sidebar-tabs { display: flex; border-bottom: 1px solid #ddd; }
+        .sidebar-tabs button { flex: 1; padding: 15px; border: none; background: none; cursor: pointer; font-weight: bold; color: #555; }
+        .sidebar-tabs button:hover { background: #eee; }
+        
+        #sidebarList { flex: 1; overflow-y: auto; list-style: none; }
+        .list-item { padding: 15px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+        .list-item:hover { background: #fff; }
+        .open-chat-btn { background: #007bff; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.8em; }
+
+        /* Add Contact Box */
+        #addContactBox { padding: 15px; background: #fff; display: none; border-bottom: 1px solid #ddd; }
+        #addContactBox input { width: 70%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;}
+        #addContactBox button { padding: 8px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer;}
+
+        /* Right Chat Area */
+        #chatArea { flex: 1; display: flex; flex-direction: column; background: #efeae2; }
+        .chat-header { padding: 20px; background: white; border-bottom: 1px solid #ddd; display: flex; align-items: center; }
+        
+        #messages { flex: 1; padding: 20px; overflow-y: auto; list-style: none; display: flex; flex-direction: column; }
+        .msg { max-width: 60%; padding: 12px 16px; margin-bottom: 10px; border-radius: 8px; position: relative; word-wrap: break-word; }
+        .msg-me { background: #dcf8c6; align-self: flex-end; border-bottom-right-radius: 0; }
+        .msg-them { background: white; align-self: flex-start; border-bottom-left-radius: 0; }
+        .system { align-self: center; background: rgba(0,0,0,0.1); padding: 5px 15px; border-radius: 15px; font-size: 0.8em; color: #555; }
+        
+        .chat-input-area { padding: 20px; background: #f0f0f0; display: flex; }
+        .chat-input-area input { flex: 1; padding: 15px; border: none; border-radius: 25px; margin-right: 15px; outline: none; }
+        .chat-input-area button { padding: 10px 25px; background: #007bff; color: white; border: none; border-radius: 25px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="appContainer">
+    <div id="loginPanel">
+        <div class="auth-box">
+            <h2>E2EE Messenger</h2>
+            <p style="color: #666; margin-bottom: 20px; font-size: 0.9em;">Secure. Private. Persistent.</p>
+            <input type="text" id="myUsername" placeholder="Username" autocomplete="off"/>
+            <input type="password" id="myPassword" placeholder="Password"/>
+            <button class="btn-login" onclick="authenticate('/login')">Login</button>
+            <button class="btn-register" onclick="authenticate('/register')">Create Account</button>
+        </div>
+    </div>
+
+    <div id="workspace">
+        
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <h3>Logged in as: <span id="displayUser" style="color:#007bff;"></span></h3>
+            </div>
+            
+            <div class="sidebar-tabs">
+                <button onclick="loadInbox()">Recent Chats</button>
+                <button onclick="loadContacts()">Contacts</button>
+            </div>
+
+            <div id="addContactBox">
+                <input type="text" id="newContactName" placeholder="Username..."/>
+                <button onclick="addContact()">Add</button>
+            </div>
+
+            <ul id="sidebarList"></ul>
+        </div>
+
+        <div id="chatArea">
+            <div class="chat-header" style="justify-content: space-between;">
+                <div>
+                    <h3 id="chattingWith">Select a chat to start messaging</h3>
+                    <small id="safetyNumberDisplay" style="color: #666; font-family: monospace; display: none;">
+                        Safety Number: <span id="snValue"></span>
+                        <button id="verifyBtn" onclick="verifyContact()" style="margin-left:10px; padding:2px 8px; background: #ffc107; border:none; border-radius:3px; cursor:pointer;">Verify</button>
+                    </small>
+                </div>
+            </div>
+            
+            <ul id="messages"></ul>
+            
+            <div class="chat-input-area">
+                <input type="file" id="imageInput" accept="image/*" style="display:none;" onchange="sendImage(event)">
+                <button id="attachBtn" onclick="document.getElementById('imageInput').click()" style="background:#28a745; margin-right:10px; border-radius:50%; width:45px; height:45px; padding:0;" disabled>📎</button>
+                
+                <input type="text" id="messageText" placeholder="Type an encrypted message..." disabled/>
+                <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    const API_URL = "http://127.0.0.1:8000";
+    const WS_URL = "ws://127.0.0.1:8000/ws";
+
+    let ws = null;
+    let myUsername = "";
+    let currentTarget = "";
+    
+    let localEcdhKeyPair, localEcdsaKeyPair;
+    let sharedAesKey, foreignEcdsaPublicKey;
+
+    // --- UI HELPER: Text vs Images ---
+    function renderContent(content) {
+        // If the decrypted string is a Data URL, draw an image!
+        if (content.startsWith("data:image/")) {
+            return `<img src="${content}" style="max-width: 100%; border-radius: 8px;">`;
+        }
+        // Otherwise, it's just text.
+        return content;
+    }
+
+    // --- SECURITY UTILITIES ---
+    async function hashPasswordClientSide(password) {
+        const msgUint8 = new TextEncoder().encode(password);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        // Convert to a hexadecimal string
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    // --- SECURE KEY STORAGE (IndexedDB) ---
+    const DB_NAME = "E2EEMessengerDB";
+    
+    function getDB() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(DB_NAME, 2); // Increment version to 2
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains("keys")) db.createObjectStore("keys");
+                // Create the messages store
+                if (!db.objectStoreNames.contains("messages")) {
+                    db.createObjectStore("messages", { keyPath: "id" });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject("IndexedDB error");
+        });
+    }
+
+    async function saveSecureKey(username, keyName, cryptoKey) {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction("keys", "readwrite");
+            tx.objectStore("keys").put(cryptoKey, `${username}_${keyName}`);
+            tx.oncomplete = () => resolve();
+        });
+    }
+
+    async function loadSecureKey(username, keyName) {
+        const db = await getDB();
+        return new Promise((resolve) => {
+            const tx = db.transaction("keys", "readonly");
+            const req = tx.objectStore("keys").get(`${username}_${keyName}`);
+            req.onsuccess = () => resolve(req.result);
+        });
+    }
+
+    // --- SAFETY NUMBERS & KEY PINNING ---
+    
+    let currentForeignKeysRaw = null; // Store the raw JSON to pin it later
+
+    async function computeSafetyNumber(myEcdsaJwk, theirEcdsaJwk) {
+        // Sort the strings so Alice and Bob get the exact same result regardless of who initiated
+        const keys = [JSON.stringify(myEcdsaJwk), JSON.stringify(theirEcdsaJwk)].sort();
+        const combined = keys[0] + keys[1];
+        
+        const msgUint8 = new TextEncoder().encode(combined);
+        const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        
+        // Convert to a readable hex format (take first 16 chars and split into blocks)
+        const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        return hex.substring(0, 16).match(/.{1,4}/g).join(' ');
+    }
+
+    // --- PERFECT FORWARD SECRECY: THE RATCHET ---
+    
+    // We need to store our current position in the chain
+    let sendingChainKey = null;
+    let receivingChainKey = null;
+
+    async function ratchetKey(currentChainKey) {
+        // 1. We use the current chain key as the base material for the HKDF meat grinder
+        const importedBaseKey = await window.crypto.subtle.importKey(
+            "raw", currentChainKey, { name: "HKDF" }, false, ["deriveBits"]
+        );
+
+        // 2. We ask the meat grinder to spit out 512 bits of random math
+        const derivedBits = await window.crypto.subtle.deriveBits(
+            {
+                name: "HKDF",
+                hash: "SHA-256",
+                salt: new Uint8Array(32), // In a full implementation, salt rotates too
+                info: new TextEncoder().encode("ratchet-step")
+            },
+            importedBaseKey,
+            512 // We need 512 bits total (256 for Message Key + 256 for Next Chain Key)
+        );
+
+        // 3. We slice the math perfectly in half
+        const messageKeyMaterial = derivedBits.slice(0, 32); // First 32 bytes (256 bits)
+        const nextChainKeyMaterial = derivedBits.slice(32, 64); // Second 32 bytes
+
+        // 4. Convert the Message Key into a usable AES-GCM CryptoKey
+        const messageKey = await window.crypto.subtle.importKey(
+            "raw", messageKeyMaterial, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]
+        );
+
+        return {
+            messageKey: messageKey,
+            nextChainKey: nextChainKeyMaterial // Keep this as raw bytes to feed the grinder next time
+        };
+    }
+
+
+    async function verifyContact() {
+        if (!currentTarget || !currentForeignKeysRaw) return;
+        
+        const db = await getDB();
+        const tx = db.transaction("keys", "readwrite");
+        // Pin Bob's keys in Alice's database!
+        tx.objectStore("keys").put(currentForeignKeysRaw, `pinned_${myUsername}_${currentTarget}`);
+        
+        document.getElementById('verifyBtn').style.display = 'none';
+        document.getElementById('safetyNumberDisplay').style.color = 'green';
+        document.getElementById('snValue').innerHTML += " 🛡️ VERIFIED";
+        alert(`${currentTarget} has been cryptographically verified. Keys pinned to your device.`);
+    }
+
+
+
+    // --- 1. AUTHENTICATION ---
+    async function authenticate(endpoint) {
+        myUsername = document.getElementById("myUsername").value.trim();
+        const rawPassword = document.getElementById("myPassword").value.trim();
+        if (!myUsername || !rawPassword) return alert("Enter credentials.");
+
+        // Client-Side Hashing
+        const safePasswordHash = await hashPasswordClientSide(rawPassword);
+
+        // 1. Check IndexedDB for existing Non-Extractable Keys
+        const savedEcdhPriv = await loadSecureKey(myUsername, 'ecdh_priv');
+        const savedEcdhPub = await loadSecureKey(myUsername, 'ecdh_pub');
+        const savedEcdsaPriv = await loadSecureKey(myUsername, 'ecdsa_priv');
+        const savedEcdsaPub = await loadSecureKey(myUsername, 'ecdsa_pub');
+
+        if (savedEcdhPriv && endpoint === '/login') {
+            console.log("Loaded secure keys from IndexedDB");
+            localEcdhKeyPair = { privateKey: savedEcdhPriv, publicKey: savedEcdhPub };
+            localEcdsaKeyPair = { privateKey: savedEcdsaPriv, publicKey: savedEcdsaPub };
+        } else {
+            console.log("Generating new non-extractable keys...");
+            // GENERATE WITH EXTRACTABLE: FALSE
+            // This prevents XSS attacks from stealing the private key material!
+            localEcdhKeyPair = await window.crypto.subtle.generateKey(
+                { name: "ECDH", namedCurve: "P-256" }, 
+                false, // <--- THE MAGIC SECURITY LOCK
+                ["deriveKey", "deriveBits"]
+            );
+            localEcdsaKeyPair = await window.crypto.subtle.generateKey(
+                { name: "ECDSA", namedCurve: "P-256" }, 
+                false, // <--- THE MAGIC SECURITY LOCK
+                ["sign", "verify"]
+            );
+
+            // Save the CryptoKey objects directly to IndexedDB
+            await saveSecureKey(myUsername, 'ecdh_priv', localEcdhKeyPair.privateKey);
+            await saveSecureKey(myUsername, 'ecdh_pub', localEcdhKeyPair.publicKey);
+            await saveSecureKey(myUsername, 'ecdsa_priv', localEcdsaKeyPair.privateKey);
+            await saveSecureKey(myUsername, 'ecdsa_pub', localEcdsaKeyPair.publicKey);
+        }
+
+        // We still need to export the PUBLIC keys to send to the server
+        // Public keys are automatically extractable, which is safe.
+        const ecdhJwk = await window.crypto.subtle.exportKey("jwk", localEcdhKeyPair.publicKey);
+        const ecdsaJwk = await window.crypto.subtle.exportKey("jwk", localEcdsaKeyPair.publicKey);
+
+        try {
+            const response = await fetch(`${API_URL}${endpoint}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    username: myUsername, 
+                    password: safePasswordHash, 
+                    ecdh_key: ecdhJwk, 
+                    ecdsa_key: ecdsaJwk 
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.detail);
+
+            document.getElementById("loginPanel").style.display = "none";
+            document.getElementById("workspace").style.display = "flex";
+            document.getElementById("displayUser").innerText = myUsername;
+
+            ws = new WebSocket(`${WS_URL}/${myUsername}`);
+            ws.onmessage = handleIncomingMessage;
+            loadInbox();
+
+        } catch (error) {
+            alert("Authentication Failed: " + error.message);
+        }
+    }
+
+    // --- 2. SIDEBAR LOGIC (New!) ---
+    
+    async function loadInbox() {
+        document.getElementById('addContactBox').style.display = 'none';
+        const list = document.getElementById('sidebarList');
+        list.innerHTML = `<li class="list-item" style="justify-content:center; color:#888;">Loading...</li>`;
+        
+        try {
+            const res = await fetch(`${API_URL}/inbox/${myUsername}`);
+            const chats = await res.json();
+            list.innerHTML = "";
+            if (chats.length === 0) list.innerHTML = `<li class="list-item" style="justify-content:center; color:#888;">No recent chats.</li>`;
+            
+            chats.forEach(chat => {
+                const time = new Date(chat.last_message_time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                list.innerHTML += `
+                    <li class="list-item" onclick="openChat('${chat.username}')">
+                        <div>
+                            <strong>${chat.username}</strong><br>
+                            <small style="color:#888;">Active: ${time}</small>
+                        </div>
+                    </li>`;
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    async function loadContacts() {
+        document.getElementById('addContactBox').style.display = 'block';
+        const list = document.getElementById('sidebarList');
+        list.innerHTML = `<li class="list-item" style="justify-content:center; color:#888;">Loading...</li>`;
+        
+        try {
+            const res = await fetch(`${API_URL}/contacts/${myUsername}`);
+            const contacts = await res.json();
+            list.innerHTML = "";
+            if (contacts.length === 0) list.innerHTML = `<li class="list-item" style="justify-content:center; color:#888;">No contacts added.</li>`;
+            
+            contacts.forEach(contact => {
+                // Here is the requested Open Chat button inside the contacts list!
+                list.innerHTML += `
+                    <li class="list-item">
+                        <strong>${contact}</strong>
+                        <button class="open-chat-btn" onclick="openChat('${contact}')">Open Chat</button>
+                    </li>`;
+            });
+        } catch (e) { console.error(e); }
+    }
+
+    async function addContact() {
+        const newContact = document.getElementById('newContactName').value.trim();
+        if(!newContact) return;
+        
+        try {
+            const res = await fetch(`${API_URL}/contacts/add`, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({owner_username: myUsername, contact_username: newContact})
+            });
+            const data = await res.json();
+            if(!res.ok) throw new Error(data.detail);
+            
+            document.getElementById('newContactName').value = "";
+            loadContacts(); // Refresh list
+        } catch (e) { alert(e.message); }
+    }
+
+    // --- 3. CHAT LOGIC (Updated to run smoothly with the UI) ---
+    
+    // Acts as the "establishConnection" wrapper
+    async function openChat(username) {
+        currentTarget = username;
+        document.getElementById('chattingWith').innerText = `🔒 Encrypted Channel: ${username}`;
+        document.getElementById('messageText').disabled = false;
+        document.getElementById('sendBtn').disabled = false;
+        document.getElementById('attachBtn').disabled = false;
+        const messages = document.getElementById('messages');
+        messages.innerHTML = `<li class="system">Exchanging keys and fetching history...</li>`;
+
+        try {
+            // 1. Fetch Keys from Server
+            const response = await fetch(`${API_URL}/users/${currentTarget}/keys`);
+            if (!response.ok) throw new Error("User keys not found.");
+            const foreignKeys = await response.json();
+            currentForeignKeysRaw = foreignKeys; // Save for pinning
+
+            // 2. CHECK FOR MAN-IN-THE-MIDDLE ATTACKS!
+            const db = await getDB();
+            const tx = db.transaction("keys", "readonly");
+            const req = tx.objectStore("keys").get(`pinned_${myUsername}_${currentTarget}`);
+            
+            // Start of the IndexedDB callback
+            req.onsuccess = async () => {
+                const pinnedKeys = req.result;
+                
+                if (pinnedKeys) {
+                    // Check if the server's keys match our pinned keys
+                    if (JSON.stringify(pinnedKeys) !== JSON.stringify(foreignKeys)) {
+                        document.getElementById('chatArea').style.background = "#ffebee";
+                        messages.innerHTML = `<li class="system" style="color:red; font-size:1.2em;">⚠️ CRITICAL SECURITY ALERT ⚠️<br>The server has provided a different public key for ${currentTarget}. You may be under a Man-in-the-Middle attack. Chat disabled.</li>`;
+                        document.getElementById('messageText').disabled = true;
+                        document.getElementById('sendBtn').disabled = true;
+                        return; // ABORT!
+                    } else {
+                        document.getElementById('verifyBtn').style.display = 'none';
+                        document.getElementById('safetyNumberDisplay').style.color = 'green';
+                    }
+                } else {
+                    document.getElementById('verifyBtn').style.display = 'inline-block';
+                    document.getElementById('safetyNumberDisplay').style.color = '#666';
+                }
+
+                // 3. Display Safety Number
+                const myEcdsaJwk = await window.crypto.subtle.exportKey("jwk", localEcdsaKeyPair.publicKey);
+                const safetyNum = await computeSafetyNumber(myEcdsaJwk, foreignKeys.ecdsa_key);
+                document.getElementById('safetyNumberDisplay').style.display = 'block';
+                document.getElementById('snValue').innerText = safetyNum;
+
+            
+                // 4. Proceed with Deriving Shared Secret (UPGRADED FOR RATCHET)
+                const foreignEcdhKey = await window.crypto.subtle.importKey("jwk", foreignKeys.ecdh_key, { name: "ECDH", namedCurve: "P-256" }, true, []);
+                foreignEcdsaPublicKey = await window.crypto.subtle.importKey("jwk", foreignKeys.ecdsa_key, { name: "ECDSA", namedCurve: "P-256" }, true, ["verify"]);
+
+                // Step A: Get raw bits instead of an AES key
+                const sharedSecretBits = await window.crypto.subtle.deriveBits(
+                    { name: "ECDH", public: foreignEcdhKey }, localEcdhKeyPair.privateKey, 256
+                );
+
+                // Step B: Sort names alphabetically so Alice and Bob agree on who gets which half
+                const [userA, userB] = [myUsername, currentTarget].sort();
+
+                // Step C: Expand the secret into TWO separate chain keys
+                const importedSharedSecret = await window.crypto.subtle.importKey("raw", sharedSecretBits, {name: "HKDF"}, false, ["deriveBits"]);
+                const rootChains = await window.crypto.subtle.deriveBits(
+                    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info: new TextEncoder().encode("root-split") },
+                    importedSharedSecret,
+                    512
+                );
+
+                // Step D: Assign the chains
+                if (myUsername === userA) {
+                    sendingChainKey = rootChains.slice(0, 32);
+                    receivingChainKey = rootChains.slice(32, 64);
+                } else {
+                    sendingChainKey = rootChains.slice(32, 64);
+                    receivingChainKey = rootChains.slice(0, 32);
+                }
+
+                // --- NEW: RATCHET SYNCHRONIZATION ---
+                // We use the server's encrypted database as an append-only log to fast-forward our keys!
+                const historyRes = await fetch(`${API_URL}/messages/${myUsername}/${currentTarget}`);
+                if (historyRes.ok) {
+                    const serverHistory = await historyRes.json();
+                    
+                    for (let msg of serverHistory) {
+                        try {
+                            const iv = new Uint8Array(msg.iv);
+                            const ciphertext = new Uint8Array(msg.ciphertext);
+                            const isMyMsg = (msg.from === myUsername);
+                            
+                            let decryptedBuffer;
+                            if (isMyMsg) {
+                                // Fast-forward our sending chain
+                                const r = await ratchetKey(sendingChainKey);
+                                sendingChainKey = r.nextChainKey;
+                                decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, r.messageKey, ciphertext);
+                            } else {
+                                // Fast-forward our receiving chain
+                                const r = await ratchetKey(receivingChainKey);
+                                receivingChainKey = r.nextChainKey;
+                                decryptedBuffer = await window.crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, r.messageKey, ciphertext);
+                            }
+                            
+                            // Save to local vault so it's ready to render
+                            const text = new TextDecoder().decode(decryptedBuffer);
+                            const toUser = isMyMsg ? currentTarget : myUsername;
+                            
+                            // NEW: Convert the server's Python timestamp into JavaScript milliseconds
+                            const originalTime = new Date(msg.timestamp).getTime();
+                            
+                            // Pass the exact historical time so they sort perfectly!
+                            await saveLocalMessage(msg.from, toUser, text, msg.iv, originalTime);
+                        } catch(e) { 
+                            // Skip tampered/broken messages
+                        }
+                    }
+                }
+                // ------------------------------------
+
+                // 5. Fetch History FROM LOCAL DB
+                const db = await getDB();
+                const tx = db.transaction("messages", "readonly");
+                const allMsgs = await new Promise(resolve => {
+                    const req = tx.objectStore("messages").getAll();
+                    req.onsuccess = () => resolve(req.result);
+                });
+
+                // Filter messages that belong to this specific chat
+                const history = allMsgs.filter(m => 
+                    (m.from === currentTarget && m.to === myUsername) || 
+                    (m.from === myUsername && m.to === currentTarget)
+                ).sort((a, b) => a.timestamp - b.timestamp);
+                
+                messages.innerHTML = ""; // Clear "Exchanging keys..." message
+                for (let msg of history) {
+                    const cssClass = (msg.from === myUsername) ? "msg msg-me" : "msg msg-them";
+                    messages.innerHTML += `<li class="${cssClass}">${renderContent(msg.text)}</li>`;
+                }
+                messages.scrollTop = messages.scrollHeight;
+                
+            }; // <-- THIS bracket closes req.onsuccess 
+            
+        } catch (error) { 
+            alert(error.message); 
+        } // <-- THIS bracket closes the main try block
+    }
+    // Save message the moment it is decrypted (Upgraded to prevent duplicates)
+    async function saveLocalMessage(from, to, text, ivArray, explicitTimestamp = null) {
+        const db = await getDB();
+        const tx = db.transaction("messages", "readwrite");
+        tx.objectStore("messages").put({
+            id: ivArray.join('_'),
+            from, to, text,
+            timestamp: explicitTimestamp || Date.now() // Use the exact server time if provided!
+        });
+    }
+
+
+    // WebSockets and Sending
+    async function handleIncomingMessage(event) {
+        const payload = JSON.parse(event.data);
+        if (payload.from !== currentTarget) { loadInbox(); return; }
+
+        try {
+            const iv = new Uint8Array(payload.iv);
+            const ciphertext = new Uint8Array(payload.ciphertext);
+            const signature = new Uint8Array(payload.signature);
+
+            const isValid = await window.crypto.subtle.verify(
+                { name: "ECDSA", hash: { name: "SHA-256" } }, foreignEcdsaPublicKey, signature, ciphertext
+            );
+            if (!isValid) throw new Error("Tampering Detected");
+
+            // --- RATCHET THE KEY! ---
+            const ratchetResult = await ratchetKey(receivingChainKey);
+            receivingChainKey = ratchetResult.nextChainKey; // DESTROY OLD CHAIN KEY
+
+            // Decrypt using the temporary Message Key
+            const decryptedBuffer = await window.crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: iv }, ratchetResult.messageKey, ciphertext
+            );
+            
+            const text = new TextDecoder().decode(decryptedBuffer);
+            // SAVE LOCALLY BEFORE RENDERING
+            await saveLocalMessage(payload.from, myUsername, text, payload.iv);
+
+            if (payload.from === currentTarget) {
+            const messages = document.getElementById('messages');
+            messages.innerHTML += `<li class="msg msg-them">${renderContent(text)}</li>`;
+            messages.scrollTop = messages.scrollHeight;
+        } else {
+            // If they aren't the current target, refresh the inbox to show the new message
+            loadInbox();
+        }
+        } catch (e) { 
+            console.error("Decryption failed. Ratchet out of sync?"); 
+        }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById("messageText");
+        const text = input.value.trim();
+        
+
+        if (text && sendingChainKey && currentTarget) {
+            const encodedText = new TextEncoder().encode(text);
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+
+            // --- RATCHET THE KEY! ---
+            const ratchetResult = await ratchetKey(sendingChainKey);
+            sendingChainKey = ratchetResult.nextChainKey; // DESTROY OLD CHAIN KEY
+
+            // Encrypt using the temporary Message Key
+            const ciphertextBuffer = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv }, ratchetResult.messageKey, encodedText
+            );
+            
+            const signatureBuffer = await window.crypto.subtle.sign(
+                { name: "ECDSA", hash: { name: "SHA-256" } }, localEcdsaKeyPair.privateKey, ciphertextBuffer
+            );
+
+            const payload = { 
+                to: currentTarget, from: myUsername, 
+                iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertextBuffer)), signature: Array.from(new Uint8Array(signatureBuffer)) 
+            };
+            
+            ws.send(JSON.stringify(payload));
+            // SAVE LOCALLY BEFORE RENDERING
+            await saveLocalMessage(myUsername, currentTarget, text, Array.from(iv));
+            const messages = document.getElementById('messages');
+            messages.innerHTML += `<li class="msg msg-me">${renderContent(text)}</li>`;
+            messages.scrollTop = messages.scrollHeight;
+            input.value = '';
+        }
+    }
+
+
+    async function sendImage(event) {
+        const file = event.target.files[0];
+        if (!file || !sendingChainKey || !currentTarget) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const dataUrl = e.target.result; // The massive Base64 string
+
+            // --- RATCHET THE KEY! ---
+            const ratchetResult = await ratchetKey(sendingChainKey);
+            sendingChainKey = ratchetResult.nextChainKey; // DESTROY OLD CHAIN KEY
+
+            // Encrypt the image string using the temporary Message Key
+            const encodedText = new TextEncoder().encode(dataUrl);
+            const iv = window.crypto.getRandomValues(new Uint8Array(12));
+            const ciphertextBuffer = await window.crypto.subtle.encrypt(
+                { name: "AES-GCM", iv: iv }, ratchetResult.messageKey, encodedText
+            );
+            
+            const signatureBuffer = await window.crypto.subtle.sign(
+                { name: "ECDSA", hash: { name: "SHA-256" } }, localEcdsaKeyPair.privateKey, ciphertextBuffer
+            );
+
+            const payload = { 
+                to: currentTarget, from: myUsername, 
+                iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertextBuffer)), signature: Array.from(new Uint8Array(signatureBuffer)) 
+            };
+            
+            // Send to server
+            ws.send(JSON.stringify(payload));
+            
+            // Save to local IndexedDB vault
+            await saveLocalMessage(myUsername, currentTarget, dataUrl, Array.from(iv));
+            
+            // Render on screen
+            const messages = document.getElementById('messages');
+            messages.innerHTML += `<li class="msg msg-me">${renderContent(dataUrl)}</li>`;
+            messages.scrollTop = messages.scrollHeight;
+            
+            // Reset the file input so you can send the same image again if needed
+            document.getElementById('imageInput').value = ""; 
+        };
+        
+        // This triggers the onload function above
+        reader.readAsDataURL(file); 
+    }
+    
+    // Allow pressing "Enter" to send
+    document.getElementById("messageText").addEventListener("keypress", function(event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            sendMessage();
+        }
+    });
+</script>
+</body>
+</html>
