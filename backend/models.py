@@ -1,7 +1,7 @@
 # backend/models.py
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.dialects.mysql import LONGTEXT
+
 import datetime
 
 Base = declarative_base()
@@ -24,7 +24,7 @@ class Message(Base):
     sender_username = Column(String(255), nullable=False)
     recipient_username = Column(String(255), ForeignKey("users.username"), nullable=False)
     
-    ciphertext = Column(LONGTEXT, nullable=False) 
+    ciphertext = Column(Text, nullable=False) 
     iv = Column(Text, nullable=False)         
     signature = Column(Text, nullable=False)  
     
